@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# uv
+uv.lock
+
+# Local index + secrets
+data/*.db
+data/*.db-*
+.env
+
+# Packaging artifacts
+packaging/build/
+dist/

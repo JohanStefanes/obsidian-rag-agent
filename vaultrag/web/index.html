@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>vaultrag</title>
+<style>
+  :root {
+    --bg: #f7f7f8;
+    --panel: #ffffff;
+    --border: #e4e4e7;
+    --text: #1a1a1e;
+    --muted: #6b7280;
+    --accent: #6d4aff;
+    --accent-soft: #efeaff;
+    --user-bg: #6d4aff;
+    --user-text: #ffffff;
+    --code-bg: #f0f0f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17171a;
+      --panel: #1f1f23;
+      --border: #2e2e34;
+      --text: #ececf1;
+      --muted: #9a9aa5;
+      --accent: #9d86ff;
+      --accent-soft: #2a2440;
+      --user-bg: #6d4aff;
+      --user-text: #ffffff;
+      --code-bg: #26262c;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  header .meta { color: var(--muted); font-size: 12.5px; }
+  main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 16px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  .msg { display: flex; flex-direction: column; gap: 6px; }
+  .msg.user { align-items: flex-end; }
+  .bubble {
+    padding: 11px 15px;
+    border-radius: 14px;
+    max-width: 88%;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .user .bubble { background: var(--user-bg); color: var(--user-text); border-bottom-right-radius: 4px; }
+  .bot .bubble {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+  }
+  .bot .bubble a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+  .bot .bubble a:hover { border-bottom-color: var(--accent); }
+  .sources {
+    font-size: 12.5px;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-left: 2px;
+  }
+  .sources .label { text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; opacity: 0.8; }
+  .sources a { color: var(--muted); text-decoration: none; }
+  .sources a:hover { color: var(--accent); }
+  .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .error { color: #d23f3f; }
+  footer {
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    padding: 12px 16px;
+  }
+  form { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; }
+  textarea {
+    flex: 1;
+    resize: none;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 11px 14px;
+    font: inherit;
+    background: var(--bg);
+    color: var(--text);
+    max-height: 160px;
+  }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  button {
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    padding: 11px 18px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .empty { color: var(--muted); text-align: center; margin-top: 12vh; }
+  .empty code { background: var(--code-bg); padding: 2px 6px; border-radius: 5px; }
+  .hint { color: var(--muted); font-size: 12px; text-align: center; margin: 8px auto 0; max-width: 760px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>vaultrag</h1>
+    <span class="meta" id="meta">loading ...</span>
+  </header>
+  <main>
+    <div class="wrap" id="conv">
+      <div class="empty" id="empty">
+        Frag deinen Vault etwas.<br /><br />
+        z.B. <code>Was habe ich in M183 gemacht?</code>
+      </div>
+    </div>
+  </main>
+  <footer>
+    <form id="form">
+      <textarea id="q" rows="1" placeholder="Frage stellen ..." autofocus></textarea>
+      <button id="send" type="submit">Fragen</button>
+    </form>
+    <div class="hint">Lokal, via Ollama. Enter sendet, Shift+Enter fuer neue Zeile.</div>
+  </footer>
+
+<script>
+let VAULT = "";
+
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function obsidianHref(fileNoExt) {
+  return "obsidian://open?vault=" + encodeURIComponent(VAULT) +
+         "&file=" + encodeURIComponent(fileNoExt);
+}
+// Turn [[Note Title]] into obsidian links; escape everything else.
+function renderAnswer(text) {
+  const parts = text.split(/(\[\[[^\]]+\]\])/g);
+  return parts.map(p => {
+    const m = p.match(/^\[\[([^\]]+)\]\]$/);
+    if (m) {
+      const title = m[1].split(/[#|]/)[0].trim();
+      return '<a href="' + obsidianHref(title) + '">' + esc(m[1]) + "</a>";
+    }
+    return esc(p);
+  }).join("");
+}
+
+const conv = document.getElementById("conv");
+const form = document.getElementById("form");
+const qEl = document.getElementById("q");
+const sendBtn = document.getElementById("send");
+
+function addUser(text) {
+  document.getElementById("empty")?.remove();
+  const el = document.createElement("div");
+  el.className = "msg user";
+  el.innerHTML = '<div class="bubble"></div>';
+  el.querySelector(".bubble").textContent = text;
+  conv.appendChild(el);
+  return el;
+}
+function addBot() {
+  const el = document.createElement("div");
+  el.className = "msg bot";
+  el.innerHTML = '<div class="bubble cursor"></div>';
+  conv.appendChild(el);
+  scroll();
+  return el;
+}
+function scroll() { document.querySelector("main").scrollTop = 1e9; }
+
+qEl.addEventListener("input", () => {
+  qEl.style.height = "auto";
+  qEl.style.height = Math.min(qEl.scrollHeight, 160) + "px";
+});
+qEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+});
+
+form.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = qEl.value.trim();
+  if (!q) return;
+  qEl.value = ""; qEl.style.height = "auto";
+  sendBtn.disabled = true;
+  addUser(q);
+
+  const bot = addBot();
+  const bubble = bot.querySelector(".bubble");
+  let answer = "";
+  let sources = [];
+
+  const es = new EventSource("/api/ask?q=" + encodeURIComponent(q));
+
+  es.addEventListener("sources", (ev) => {
+    sources = JSON.parse(ev.data).sources || [];
+  });
+  es.addEventListener("token", (ev) => {
+    answer += JSON.parse(ev.data).text;
+    bubble.innerHTML = renderAnswer(answer);
+    bubble.classList.add("cursor");
+    scroll();
+  });
+  es.addEventListener("error", (ev) => {
+    // Distinguish an app error payload from a raw connection drop.
+    let msg = "Verbindung unterbrochen.";
+    try { if (ev.data) msg = JSON.parse(ev.data).message; } catch (_) {}
+    bubble.classList.remove("cursor");
+    bubble.innerHTML = '<span class="error">' + esc(msg) + "</span>";
+    es.close(); sendBtn.disabled = false; qEl.focus();
+  });
+  es.addEventListener("done", () => {
+    bubble.classList.remove("cursor");
+    bubble.innerHTML = renderAnswer(answer) || "<em>Keine Antwort.</em>";
+    if (sources.length) {
+      const s = document.createElement("div");
+      s.className = "sources";
+      s.innerHTML = '<span class="label">Quellen</span>' + sources.map(p => {
+        const noExt = p.replace(/\.md$/, "");
+        return '<a href="' + obsidianHref(noExt) + '">' + esc(p) + "</a>";
+      }).join("");
+      bot.appendChild(s);
+    }
+    es.close(); sendBtn.disabled = false; qEl.focus(); scroll();
+  });
+});
+
+fetch("/api/status").then(r => r.json()).then(s => {
+  VAULT = s.vault_name || "";
+  document.getElementById("meta").textContent =
+    `${s.notes} Notizen · ${s.chunks} Chunks · ${s.embed_model} + ${s.chat_model}`;
+}).catch(() => {
+  document.getElementById("meta").textContent = "Backend nicht erreichbar";
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+[
+  {
+    "q": "Was habe ich in M183 zu Applikationssicherheit gemacht?",
+    "expect": ["M183"]
+  },
+  {
+    "q": "Worum geht es in meiner Vertiefungsarbeit?",
+    "expect": ["VA", "Arbeitsjournal"]
+  },
+  {
+    "q": "Was habe ich zum funktionalen Programmieren im Modul M323 gelernt?",
+    "expect": ["M323"]
+  },
+  {
+    "q": "Welche KI-Tools habe ich fuer die VA eingesetzt?",
+    "expect": ["Arbeitsjournal"]
+  },
+  {
+    "q": "Was steht in meinen Lernjournalen zum Thema Applikationssicherheit?",
+    "expect": ["Lernjournale", "M183"]
+  }
+]
