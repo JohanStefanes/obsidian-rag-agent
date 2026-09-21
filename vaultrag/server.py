@@ -68,7 +68,7 @@ def create_app(cfg: Config):
                     yield _sse("done", {})
                     return
                 try:
-                    for piece in stream_answer(q, hits, cfg.ollama_host, cfg.chat_model):
+                    for piece in stream_answer(q, hits, cfg):
                         yield _sse("token", {"text": piece})
                 except OllamaError as exc:
                     yield _sse("error", {"message": str(exc)})

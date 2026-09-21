@@ -72,7 +72,7 @@ def _cmd_ask(args: argparse.Namespace, cfg: Config) -> int:
         return 0
 
     try:
-        for piece in stream_answer(args.question, hits, cfg.ollama_host, cfg.chat_model):
+        for piece in stream_answer(args.question, hits, cfg):
             print(piece, end="", flush=True)
         print()
     except OllamaError as exc:

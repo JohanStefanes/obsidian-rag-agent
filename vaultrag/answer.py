@@ -9,15 +9,18 @@ from __future__ import annotations
 
 import ollama
 
+from .config import Config
 from .embed import OllamaError
 from .models import Hit
 
 _SYSTEM = (
-    "Du bist ein Assistent, der Fragen ausschliesslich anhand der bereitgestellten "
-    "Notizen aus einem persoenlichen Obsidian-Vault beantwortet. Antworte in der "
-    "Sprache der Frage. Stuetze dich nur auf den Kontext; wenn er die Antwort nicht "
-    "hergibt, sage das offen. Zitiere die verwendeten Notizen als [[Notiztitel]]. "
-    "Verwende keine Gedankenstriche (— oder –) im Fliesstext."
+    "Du bist ein Assistent, der Fragen anhand der bereitgestellten Notizen aus einem "
+    "persoenlichen Obsidian-Vault beantwortet. Antworte in der Sprache der Frage. "
+    "Stuetze dich auf den Kontext; wenn er die Antwort nicht hergibt, sage das offen. "
+    "Zitiere die verwendeten Notizen als [[Notiztitel]]. Der Abschnitt 'Setup' "
+    "beschreibt die Konfiguration dieses Tools (z.B. den Dateipfad des Vaults auf der "
+    "Festplatte); nutze ihn nur fuer Fragen ueber das Tool selbst und zitiere ihn nicht "
+    "als Notiz. Verwende keine Gedankenstriche (— oder –) im Fliesstext."
 )
 
 
@@ -28,12 +31,21 @@ def _format_context(hits: list[Hit]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
-def build_messages(query: str, hits: list[Hit]) -> list[dict]:
+def build_messages(query: str, hits: list[Hit], cfg: Config) -> list[dict]:
     context = _format_context(hits)
+    setup = (
+        "Setup (Konfiguration dieses Tools, keine Vault-Notiz):\n"
+        f"- Vault-Pfad auf der Festplatte: {cfg.vault_path}\n"
+        f"- Embedding-Modell: {cfg.embed_model}\n"
+        f"- Chat-Modell: {cfg.chat_model}"
+    )
     user = (
+        f"{setup}\n\n"
         f"Kontext aus dem Vault:\n\n{context}\n\n"
         f"Frage: {query}\n\n"
-        f"Beantworte die Frage anhand des Kontexts und nenne die Quellen als [[Notiz]]."
+        f"Beantworte die Frage. Geht es um das Tool selbst (z.B. den Vault-Pfad oder die "
+        f"Modelle), nutze den Setup-Abschnitt und zitiere ihn nicht als [[Notiz]]. Sonst "
+        f"stuetze dich auf den Kontext und nenne die Quellen als [[Notiz]]."
     )
     return [
         {"role": "system", "content": _SYSTEM},
@@ -41,10 +53,11 @@ def build_messages(query: str, hits: list[Hit]) -> list[dict]:
     ]
 
 
-def stream_answer(query: str, hits: list[Hit], host: str, model: str):
+def stream_answer(query: str, hits: list[Hit], cfg: Config):
     """Yield answer text chunks from the local chat model."""
-    client = ollama.Client(host=host)
-    messages = build_messages(query, hits)
+    client = ollama.Client(host=cfg.ollama_host)
+    model = cfg.chat_model
+    messages = build_messages(query, hits, cfg)
     try:
         for part in client.chat(model=model, messages=messages, stream=True):
             yield part["message"]["content"]
