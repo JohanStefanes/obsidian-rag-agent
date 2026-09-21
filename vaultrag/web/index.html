@@ -51,6 +51,18 @@
   }
   header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
   header .meta { color: var(--muted); font-size: 12.5px; }
+  header #reset {
+    margin-left: auto;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 5px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  header #reset:hover { color: var(--text); border-color: var(--accent); }
   main {
     flex: 1;
     overflow-y: auto;
@@ -126,6 +138,7 @@
   <header>
     <h1>vaultrag</h1>
     <span class="meta" id="meta">loading ...</span>
+    <button id="reset" type="button" title="Gespraech zuruecksetzen">Neu</button>
   </header>
   <main>
     <div class="wrap" id="conv">
@@ -145,6 +158,7 @@
 
 <script>
 let VAULT = "";
+let history = [];   // [{role:'user'|'assistant', content}], the conversation memory
 
 function esc(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -198,7 +212,22 @@ qEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
 });
 
-form.addEventListener("submit", (e) => {
+function finishBot(bot, bubble, answer, sources) {
+  bubble.classList.remove("cursor");
+  bubble.innerHTML = renderAnswer(answer) || "<em>Keine Antwort.</em>";
+  if (sources.length) {
+    const s = document.createElement("div");
+    s.className = "sources";
+    s.innerHTML = '<span class="label">Quellen</span>' + sources.map(p => {
+      const noExt = p.replace(/\.md$/, "");
+      return '<a href="' + obsidianHref(noExt) + '">' + esc(p) + "</a>";
+    }).join("");
+    bot.appendChild(s);
+  }
+  scroll();
+}
+
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const q = qEl.value.trim();
   if (!q) return;
@@ -211,39 +240,62 @@ form.addEventListener("submit", (e) => {
   let answer = "";
   let sources = [];
 
-  const es = new EventSource("/api/ask?q=" + encodeURIComponent(q));
+  try {
+    const res = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q, history }),
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
 
-  es.addEventListener("sources", (ev) => {
-    sources = JSON.parse(ev.data).sources || [];
-  });
-  es.addEventListener("token", (ev) => {
-    answer += JSON.parse(ev.data).text;
-    bubble.innerHTML = renderAnswer(answer);
-    bubble.classList.add("cursor");
-    scroll();
-  });
-  es.addEventListener("error", (ev) => {
-    // Distinguish an app error payload from a raw connection drop.
-    let msg = "Verbindung unterbrochen.";
-    try { if (ev.data) msg = JSON.parse(ev.data).message; } catch (_) {}
-    bubble.classList.remove("cursor");
-    bubble.innerHTML = '<span class="error">' + esc(msg) + "</span>";
-    es.close(); sendBtn.disabled = false; qEl.focus();
-  });
-  es.addEventListener("done", () => {
-    bubble.classList.remove("cursor");
-    bubble.innerHTML = renderAnswer(answer) || "<em>Keine Antwort.</em>";
-    if (sources.length) {
-      const s = document.createElement("div");
-      s.className = "sources";
-      s.innerHTML = '<span class="label">Quellen</span>' + sources.map(p => {
-        const noExt = p.replace(/\.md$/, "");
-        return '<a href="' + obsidianHref(noExt) + '">' + esc(p) + "</a>";
-      }).join("");
-      bot.appendChild(s);
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE frames are separated by a blank line.
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const ev = (frame.match(/^event: (.*)$/m) || [])[1];
+        const dataLine = (frame.match(/^data: (.*)$/m) || [])[1];
+        if (!ev || !dataLine) continue;
+        const data = JSON.parse(dataLine);
+        if (ev === "sources") {
+          sources = data.sources || [];
+        } else if (ev === "token") {
+          answer += data.text;
+          bubble.innerHTML = renderAnswer(answer);
+          bubble.classList.add("cursor");
+          scroll();
+        } else if (ev === "error") {
+          bubble.classList.remove("cursor");
+          bubble.innerHTML = '<span class="error">' + esc(data.message) + "</span>";
+          sendBtn.disabled = false; qEl.focus();
+          return;
+        }
+      }
     }
-    es.close(); sendBtn.disabled = false; qEl.focus(); scroll();
-  });
+    finishBot(bot, bubble, answer, sources);
+    // Remember this turn so follow-ups have context.
+    history.push({ role: "user", content: q });
+    history.push({ role: "assistant", content: answer });
+    if (history.length > 12) history = history.slice(-12);
+  } catch (err) {
+    bubble.classList.remove("cursor");
+    bubble.innerHTML = '<span class="error">Verbindung unterbrochen.</span>';
+  } finally {
+    sendBtn.disabled = false; qEl.focus();
+  }
+});
+
+document.getElementById("reset").addEventListener("click", () => {
+  history = [];
+  conv.innerHTML =
+    '<div class="empty">Neues Gespraech. Frag deinen Vault etwas.</div>';
+  qEl.focus();
 });
 
 fetch("/api/status").then(r => r.json()).then(s => {

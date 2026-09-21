@@ -14,6 +14,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+# Imported at module level (not inside create_app) so that FastAPI can resolve
+# the `request: Request` annotation, which `from __future__ import annotations`
+# turns into a string it looks up in this module's globals. server.py itself is
+# only imported lazily by the CLI, so the web extra stays optional.
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+
 from .answer import source_list, stream_answer
 from .config import Config
 from .embed import Embedder, OllamaError
@@ -28,9 +35,6 @@ def _sse(event: str, data: dict) -> str:
 
 
 def create_app(cfg: Config):
-    from fastapi import FastAPI
-    from fastapi.responses import HTMLResponse, StreamingResponse
-
     app = FastAPI(title="vaultrag", docs_url=None, redoc_url=None)
 
     @app.get("/", response_class=HTMLResponse)
@@ -49,8 +53,22 @@ def create_app(cfg: Config):
             "chat_model": cfg.chat_model,
         }
 
-    @app.get("/api/ask")
-    def ask(q: str, k: int = 0):
+    @app.post("/api/ask")
+    async def ask(request: Request):
+        body = await request.json()
+        q = (body.get("question") or "").strip()
+        history = body.get("history") or []
+        k = int(body.get("k") or 0)
+
+        # For short follow-ups ("stimmt nicht ...", "und warum?"), fold in the
+        # previous user turn so retrieval has something concrete to match.
+        retrieval_query = q
+        prev_user = next(
+            (m["content"] for m in reversed(history) if m.get("role") == "user"), None
+        )
+        if prev_user and len(q.split()) < 6:
+            retrieval_query = f"{prev_user}\n{q}"
+
         def gen():
             store = Store(cfg.db_path)
             try:
@@ -59,7 +77,7 @@ def create_app(cfg: Config):
                     return
                 embedder = Embedder(cfg.ollama_host, cfg.embed_model)
                 try:
-                    hits = retrieve(q, store, embedder, k=k or cfg.top_k)
+                    hits = retrieve(retrieval_query, store, embedder, k=k or cfg.top_k)
                 except OllamaError as exc:
                     yield _sse("error", {"message": str(exc)})
                     return
@@ -68,7 +86,7 @@ def create_app(cfg: Config):
                     yield _sse("done", {})
                     return
                 try:
-                    for piece in stream_answer(q, hits, cfg):
+                    for piece in stream_answer(q, hits, cfg, history=history):
                         yield _sse("token", {"text": piece})
                 except OllamaError as exc:
                     yield _sse("error", {"message": str(exc)})

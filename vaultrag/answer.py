@@ -32,7 +32,19 @@ def _format_context(hits: list[Hit]) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
-def build_messages(query: str, hits: list[Hit], cfg: Config) -> list[dict]:
+def _clean_history(history: list[dict] | None, keep: int = 8) -> list[dict]:
+    """Keep the last `keep` valid user/assistant turns for conversational context."""
+    out = []
+    for m in history or []:
+        role, content = m.get("role"), m.get("content")
+        if role in ("user", "assistant") and content:
+            out.append({"role": role, "content": content})
+    return out[-keep:]
+
+
+def build_messages(
+    query: str, hits: list[Hit], cfg: Config, history: list[dict] | None = None
+) -> list[dict]:
     context = _format_context(hits)
     setup = (
         "Setup (Konfiguration dieses Tools, keine Vault-Notiz):\n"
@@ -44,21 +56,23 @@ def build_messages(query: str, hits: list[Hit], cfg: Config) -> list[dict]:
         f"{setup}\n\n"
         f"Kontext aus dem Vault:\n\n{context}\n\n"
         f"Frage: {query}\n\n"
-        f"Beantworte die Frage. Geht es um das Tool selbst (z.B. den Vault-Pfad oder die "
-        f"Modelle), nutze den Setup-Abschnitt und zitiere ihn nicht als [[Notiz]]. Sonst "
-        f"stuetze dich auf den Kontext und nenne die Quellen als [[Notiz]]."
+        f"Beantworte die Frage und beziehe den bisherigen Gespraechsverlauf mit ein "
+        f"(z.B. Korrekturen des Nutzers). Geht es um das Tool selbst (z.B. den Vault-Pfad "
+        f"oder die Modelle), nutze den Setup-Abschnitt und zitiere ihn nicht als [[Notiz]]. "
+        f"Sonst stuetze dich auf den Kontext und nenne die Quellen als [[Notiz]]."
     )
     return [
         {"role": "system", "content": _SYSTEM},
+        *_clean_history(history),
         {"role": "user", "content": user},
     ]
 
 
-def stream_answer(query: str, hits: list[Hit], cfg: Config):
+def stream_answer(query: str, hits: list[Hit], cfg: Config, history: list[dict] | None = None):
     """Yield answer text chunks from the local chat model."""
     client = ollama.Client(host=cfg.ollama_host)
     model = cfg.chat_model
-    messages = build_messages(query, hits, cfg)
+    messages = build_messages(query, hits, cfg, history)
     try:
         for part in client.chat(model=model, messages=messages, stream=True):
             yield part["message"]["content"]
