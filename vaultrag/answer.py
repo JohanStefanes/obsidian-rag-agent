@@ -20,7 +20,8 @@ _SYSTEM = (
     "Zitiere die verwendeten Notizen als [[Notiztitel]]. Der Abschnitt 'Setup' "
     "beschreibt die Konfiguration dieses Tools (z.B. den Dateipfad des Vaults auf der "
     "Festplatte); nutze ihn nur fuer Fragen ueber das Tool selbst und zitiere ihn nicht "
-    "als Notiz. Verwende keine Gedankenstriche (— oder –) im Fliesstext."
+    "als Notiz. Verwende Schweizer Rechtschreibung (ss statt ß) und keine "
+    "Gedankenstriche (— oder –) im Fliesstext."
 )
 
 

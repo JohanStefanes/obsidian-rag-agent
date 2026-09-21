@@ -44,7 +44,7 @@ You need [`uv`](https://docs.astral.sh/uv/) and [Ollama](https://ollama.com).
 ```bash
 # 1. Get the models (one time)
 ollama pull bge-m3                 # turns text into vectors (multilingual)
-ollama pull llama3.1:8b            # writes the answers
+ollama pull qwen2.5:7b-instruct    # writes the answers (see "Which model" below)
 
 # 2. Install and point it at your vault
 uv sync
@@ -94,6 +94,20 @@ Small on purpose — each file does one thing:
 | `vaultrag/cli.py` | the `index` / `ask` / `status` / `serve` / `app` commands |
 | `vaultrag/server.py` | the web page + streaming API |
 | `vaultrag/desktop.py` | the native Mac window |
+
+## Which model
+
+Set the chat model in `.env` (`CHAT_MODEL=`). Bigger is smarter but slower; pick by how
+much memory you have:
+
+| Machine | Suggested chat model | Notes |
+|---------|----------------------|-------|
+| 8-16 GB | `qwen2.5:7b-instruct` | fast, solid German, the default |
+| 24 GB+  | `qwen2.5:14b-instruct` | more complete answers, cleaner `[[citations]]`, ~12 tok/s on an M1 Pro |
+| 32 GB+, want the ceiling | `qwen3:30b-a3b` | mixture-of-experts: smarter, stays fast |
+
+Embeddings stay on `bge-m3` (multilingual) regardless. Any Ollama model works — these are
+just the ones that did best here on German notes.
 
 ## Tests
 
